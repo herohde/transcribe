@@ -11,7 +11,7 @@ First, ensure you have Google Speech API enabled in your project as described
 the Google Speech API may not be free.
 
 Second, install
-[gcloud](https://cloud.google.com/sdk/) and authenticate application default
+[gcloud](https://cloud.google.com/sdk/) and allow application default
 credentials:
 ```
 $ gcloud auth application-default login
