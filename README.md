@@ -6,6 +6,15 @@ GCS upload (and removal). It currently supports flac files only.
 
 # How to use
 
-First, ensure you have Google Speech API enabled in your project as described here: https://cloud.google.com/speech/docs/getting-started. Note that using the Google Speech API may not be free.
+Ensure you have Google Speech API enabled in your project as described
+here: https://cloud.google.com/speech/docs/getting-started. Note that using
+the Google Speech API may not be free.
+
+Install the transcribe tool:
+
+$ go get github.com/herohde/transcribe
+$ go install github.com/herohde/transcribe/cmd/transcribe
+
+Run it:
 
 $ transcribe [options] file [...]
