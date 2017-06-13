@@ -2,7 +2,7 @@
 
 Transcribe is a tool for transcribing audio files using Google Speech API. It
 is intended for bulk processing of large (> 1 min) audio files and automates
-GCS upload (and removal). It currently supports flac files only.
+GCS upload (and removal). It supports wav 44.1kHz files only.
 
 ## How to use
 
@@ -17,7 +17,13 @@ credentials:
 $ gcloud auth application-default login
 ```
 
-Third, install the transcribe tool:
+Third, install 'sox' if stereo conversion is needed (using apt-get or brew, say):
+```
+$ apt-get install sox
+$ brew install sox
+```
+
+Fourth, install the transcribe tool:
 ```
 $ go get github.com/herohde/transcribe
 $ go install github.com/herohde/transcribe/cmd/transcribe
@@ -27,7 +33,8 @@ Then run:
 ```
 $ transcribe --project=myproject [options] file [...]
 ```
-By default, it will transcribe 'bar/foo.flac' into 'foo.flac.txt'.
+By default, it will transcribe 'bar/foo.wav' into 'foo.wav.txt'. Add `--mono` if
+stereo files.
 
 ## License
 
