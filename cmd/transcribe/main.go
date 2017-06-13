@@ -102,6 +102,12 @@ func main() {
 				return
 			}
 
+			out := filepath.Join(*output, filepath.Base(name)+".txt")
+			if _, err := os.Stat(out); err == nil || !os.IsNotExist(err) {
+				log.Printf("File %v already transcribed. Ignoring.", name)
+				return
+			}
+
 			log.Printf("Transcribing %v ...", filepath.Base(name))
 
 			// (a) If stereo, convert first to mono
@@ -172,8 +178,6 @@ func main() {
 
 			// (d) Write output
 
-			base := filepath.Join(*output, filepath.Base(name))
-
 			// if err := ioutil.WriteFile(base+".raw.txt", []byte(data), 0644); err != nil {
 			//    log.Printf("Failed to write raw output: %v", err)
 			// }
@@ -182,8 +186,8 @@ func main() {
 			// data = strings.Replace(data, "Paragraph", "\n", -1)
 			data = strings.Replace(data, "  ", " ", -1)
 
-			if err := ioutil.WriteFile(base+".txt", []byte(data), 0644); err != nil {
-				log.Printf("Failed to write clean output: %v", err)
+			if err := ioutil.WriteFile(out, []byte(data), 0644); err != nil {
+				log.Printf("Failed to write output: %v", err)
 			}
 
 			log.Printf("Transcribed %v", filepath.Base(name))
