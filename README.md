@@ -1,8 +1,9 @@
 # Transcribe
 
 Transcribe is a tool for transcribing audio files using Google Speech API. It
-is intended for bulk processing of large (> 1 min) audio files and automates
-GCS upload (and removal). It supports wav 44.1kHz files only.
+is intended for bulk processing of large (> 1 min) audio files -- such as from
+dictation recorders -- and automates GCS upload (and removal). It supports
+44.1kHz .wav files only.
 
 ## How to use
 
@@ -17,11 +18,11 @@ credentials:
 $ gcloud auth application-default login
 ```
 
-Third, install 'sox' if stereo conversion is needed (using apt-get or brew, say):
+Third, install 'sox' if stereo conversion is needed:
 ```
 $ apt-get install sox
-$ brew install sox
 ```
+or equivalent. On OSX, an option would be `$ brew install sox`.
 
 Fourth, install the transcribe tool:
 ```
