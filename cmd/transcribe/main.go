@@ -165,8 +165,6 @@ func main() {
 				return
 			}
 
-			// TODO(herohde) 6/11/2017: Add simple post-processing.
-
 			var phrases []string
 			for _, result := range resp.Results {
 				for _, alt := range result.Alternatives {
@@ -178,13 +176,10 @@ func main() {
 
 			// (d) Write output
 
-			// if err := ioutil.WriteFile(base+".raw.txt", []byte(data), 0644); err != nil {
-			//    log.Printf("Failed to write raw output: %v", err)
-			// }
+			// TODO(herohde) 6/11/2017: Add simple post-processing.
 
-			// data = strings.Replace(data, "paragraph", "\n", -1)
-			// data = strings.Replace(data, "Paragraph", "\n", -1)
 			data = strings.Replace(data, "  ", " ", -1)
+			data = strings.Replace(data, "\n ", "\n", -1)
 
 			if err := ioutil.WriteFile(out, []byte(data), 0644); err != nil {
 				log.Printf("Failed to write output: %v", err)
