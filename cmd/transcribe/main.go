@@ -15,13 +15,14 @@ import (
 	"time"
 
 	"cloud.google.com/go/speech/apiv1"
-	"golang.org/x/oauth2/google"
 	"google.golang.org/api/storage/v1"
 
-	speechpb "google.golang.org/genproto/googleapis/cloud/speech/v1"
+	"github.com/herohde/transcribe/pkg/transcribe"
+	"github.com/herohde/transcribe/pkg/util/storagex"
 	"os/exec"
 	"path"
 	"sync"
+	"sync/atomic"
 )
 
 var (
@@ -33,8 +34,7 @@ var (
 
 func init() {
 	flag.Usage = func() {
-		fmt.Fprint(os.Stderr, `
-usage: transcribe [options] file [...]
+		fmt.Fprint(os.Stderr, `usage: transcribe [options] file [...]
 
 Transcribe transcribes audio files using Google Speech API. It is intended
 for bulk processing of large (> 1 min) audio files and automates GCS upload
@@ -48,155 +48,135 @@ Options:
 func main() {
 	flag.Parse()
 
-	files := flag.Args()
-	if len(files) == 0 {
-		fmt.Fprintln(os.Stderr, "transcribe: no files provided.")
+	// (1) Validate input
+	if len(flag.Args()) == 0 {
 		flag.Usage()
-		os.Exit(1)
+		log.Fatal("No files provided.")
 	}
 	if *project == "" {
-		fmt.Fprintln(os.Stderr, "transcribe: no project provided.")
 		flag.Usage()
-		os.Exit(2)
+		log.Fatal("No project provided.")
 	}
 
-	// (2) Create tmp location, if needed.
+	var files []string
+	for _, file := range flag.Args() {
+		if !strings.HasSuffix(strings.ToLower(file), ".wav") {
+			flag.Usage()
+			log.Fatalf("File %v is not a supported (.wav) format", file)
+		}
 
-	cl, err := newStorageClient(context.Background())
+		out := filepath.Join(*output, filepath.Base(file)+".txt")
+		if _, err := os.Stat(out); err == nil || !os.IsNotExist(err) {
+			log.Printf("File %v already transcribed. Ignoring.", file)
+			continue
+		}
+
+		files = append(files, file)
+	}
+	if len(files) == 0 {
+		return // exit: nothing to do
+	}
+
+	// (2) Create GCP clients
+
+	cl, err := storagex.NewClient(context.Background())
 	if err != nil {
 		log.Fatalf("Failed to create GCS client: %v", err)
 	}
-
-	if *bucket == "" {
-		*bucket = fmt.Sprintf("transcribe-%v", time.Now().UnixNano())
-
-		if _, err := cl.Buckets.Insert(*project, &storage.Bucket{Name: *bucket}).Do(); err != nil {
-			log.Fatalf("Failed to create tmp bucket %v: %v", *bucket, err)
-		}
-		log.Printf("Using temporary GCS bucket '%v'", *bucket)
-
-		defer func() {
-			if err := cl.Buckets.Delete(*bucket).Do(); err != nil {
-				log.Printf("Failed to delete tmp bucket %v: %v", *bucket, err)
-			}
-		}()
-	}
-
 	scl, err := speech.NewClient(context.Background())
 	if err != nil {
 		log.Fatalf("Failed to create speech client: %v", err)
 	}
 
-	log.Printf("Transcribing %v files in parallel", len(files))
+	// (3) Create tmp location, if needed.
 
-	// (3) Upload and transcribe the files in parallel
+	if *bucket == "" {
+		*bucket = fmt.Sprintf("transcribe-%v", time.Now().UnixNano())
+
+		if err := storagex.NewBucket(cl, *project, *bucket); err != nil {
+			log.Fatalf("Failed to create tmp bucket %v: %v", *bucket, err)
+		}
+		defer storagex.TryDeleteBucket(cl, *bucket)
+
+		log.Printf("Using temporary GCS bucket '%v'", *bucket)
+	}
+
+	log.Printf("Transcribing %v audio files in parallel", len(files))
+
+	// (4) Upload, transcribe and process the files in parallel
+
+	var failures int32
 
 	var wg sync.WaitGroup
 	for _, name := range files {
 		wg.Add(1)
-		go func(name string) {
+		go func(filename string) {
 			defer wg.Done()
 
-			if !strings.HasSuffix(strings.ToLower(name), ".wav") {
-				log.Printf("File %v is not a supported format. Ignoring.", name)
+			name := filepath.Base(filename)
+			out := filepath.Join(*output, name+".txt")
+
+			log.Printf("Transcribing %v ...", name)
+
+			if err := process(context.Background(), scl, cl, *bucket, filename, out, *mono); err != nil {
+				log.Printf("Failed to process %v: %v", name, err)
+				atomic.AddInt32(&failures, 1)
 				return
 			}
 
-			out := filepath.Join(*output, filepath.Base(name)+".txt")
-			if _, err := os.Stat(out); err == nil || !os.IsNotExist(err) {
-				log.Printf("File %v already transcribed. Ignoring.", name)
-				return
-			}
-
-			log.Printf("Transcribing %v ...", filepath.Base(name))
-
-			// (a) If stereo, convert first to mono
-
-			if *mono {
-				tmp := filepath.Join(os.TempDir(), filepath.Base(name))
-
-				out, err := exec.Command("sox", name, tmp, "remix", "1-2").CombinedOutput()
-				if err != nil {
-					log.Printf("Failed to convert %v to mono (err=%v): %v. Do you have sox installed?", name, err, string(out))
-					return
-				}
-				defer os.Remove(tmp)
-
-				name = tmp
-			}
-
-			// (b) Upload
-
-			obj := path.Join("tmp/audio", strings.ToLower(filepath.Base(name)))
-			fd, err := os.Open(name)
-			if err != nil {
-				log.Printf("Failed to read %v: %v", name, err)
-				return
-			}
-			defer fd.Close()
-
-			if _, err := cl.Objects.Insert(*bucket, &storage.Object{Name: obj}).Media(fd).Do(); err != nil {
-				log.Printf("Failed to upload %v: %v", name, err)
-				return
-			}
-			defer cl.Objects.Delete(*bucket, obj).Do()
-
-			// (c) Transcribe
-
-			req := &speechpb.LongRunningRecognizeRequest{
-				Config: &speechpb.RecognitionConfig{
-					Encoding:        speechpb.RecognitionConfig_LINEAR16,
-					SampleRateHertz: 44100,
-					LanguageCode:    "en-US",
-				},
-				Audio: &speechpb.RecognitionAudio{
-					AudioSource: &speechpb.RecognitionAudio_Uri{Uri: fmt.Sprintf("gs://%v/%v", *bucket, obj)},
-				},
-			}
-
-			op, err := scl.LongRunningRecognize(context.Background(), req)
-			if err != nil {
-				log.Printf("Failed to transcribe %v: %v", name, err)
-				return
-			}
-			resp, err := op.Wait(context.Background())
-			if err != nil {
-				log.Printf("Failed to transcribe %v: %v", name, err)
-				return
-			}
-
-			var phrases []string
-			for _, result := range resp.Results {
-				for _, alt := range result.Alternatives {
-					// Add text, if low confidence?
-					phrases = append(phrases, alt.Transcript)
-				}
-			}
-			data := strings.Join(phrases, " ")
-
-			// (d) Write output
-
-			// TODO(herohde) 6/11/2017: Add simple post-processing.
-
-			data = strings.Replace(data, "  ", " ", -1)
-			data = strings.Replace(data, "\n ", "\n", -1)
-
-			if err := ioutil.WriteFile(out, []byte(data), 0644); err != nil {
-				log.Printf("Failed to write output: %v", err)
-			}
-
-			log.Printf("Transcribed %v", filepath.Base(name))
+			log.Printf("Transcribed %v", name)
 		}(name)
 	}
 	wg.Wait()
 
+	if failures > 0 {
+		log.Fatalf("Failed to transcribe %v audio files. Exiting.", failures)
+	}
 	log.Print("Done")
 }
 
-func newStorageClient(ctx context.Context) (*storage.Service, error) {
-	httpClient, err := google.DefaultClient(context.Background(), storage.CloudPlatformScope)
-	if err != nil {
-		return nil, err
+func process(ctx context.Context, scl *speech.Client, cl *storage.Service, bucket, filename, output string, mono bool) error {
+	name := filepath.Base(filename)
+
+	if mono {
+		// (a) If stereo, convert first to mono
+
+		tmp := filepath.Join(os.TempDir(), name)
+
+		out, err := exec.Command("sox", filename, tmp, "remix", "1-2").CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to convert %v to mono (err=%v): %v. Do you have sox installed?", name, err, string(out))
+		}
+		defer os.Remove(tmp)
+
+		filename = tmp
 	}
-	return storage.New(httpClient)
+
+	// (b) Upload
+
+	object := path.Join("tmp/audio", strings.ToLower(name))
+	if err := storagex.UploadFile(cl, bucket, object, filename); err != nil {
+		return err
+	}
+	defer storagex.TryDeleteObject(cl, bucket, object)
+
+	// (c) Transcribe
+
+	before := time.Now()
+
+	phrases, err := transcribe.Submit(ctx, scl, bucket, object)
+	if err != nil {
+		return err
+	}
+	data := transcribe.PostProcess(phrases)
+
+	duration := time.Duration((time.Now().Sub(before).Nanoseconds() / 1e9) * 1e9)
+	log.Printf("Audio file %v contained %v text segments (%v letters). Time spent: %v", name, len(phrases), len(data), duration)
+
+	// (d) Write output
+
+	if err := ioutil.WriteFile(output, []byte(data), 0644); err != nil {
+		return fmt.Errorf("failed to write output: %v", err)
+	}
+	return nil
 }
