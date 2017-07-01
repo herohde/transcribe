@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"os"
 	"os/exec"
 	"path"
@@ -20,6 +19,7 @@ import (
 
 	"cloud.google.com/go/speech/apiv1"
 	"github.com/herohde/build"
+	"github.com/herohde/logw"
 	"github.com/herohde/transcribe/pkg/transcribe"
 	"github.com/herohde/transcribe/pkg/util/storagex"
 	"google.golang.org/api/storage/v1"
@@ -49,28 +49,29 @@ Options:
 
 func main() {
 	flag.Parse()
-	log.Printf("Transcribe, build %v", version)
+	ctx := context.Background()
+	logw.Infof(ctx, "Transcribe, build %v", version)
 
 	// (1) Validate input
 	if len(flag.Args()) == 0 {
 		flag.Usage()
-		log.Fatal("No files provided.")
+		logw.Fatalf(ctx, "No files provided.")
 	}
 	if *project == "" {
 		flag.Usage()
-		log.Fatal("No project provided.")
+		logw.Fatalf(ctx, "No project provided.")
 	}
 
 	var files []string
 	for _, file := range flag.Args() {
 		if !strings.HasSuffix(strings.ToLower(file), ".wav") {
 			flag.Usage()
-			log.Fatalf("File %v is not a supported (.wav) format", file)
+			logw.Fatalf(ctx, "File %v is not a supported (.wav) format", file)
 		}
 
 		out := filepath.Join(*output, filepath.Base(file)+".txt")
 		if _, err := os.Stat(out); err == nil || !os.IsNotExist(err) {
-			log.Printf("File %v already transcribed. Ignoring.", file)
+			logw.Infof(ctx, "File %v already transcribed. Ignoring.", file)
 			continue
 		}
 
@@ -84,11 +85,11 @@ func main() {
 
 	cl, err := storagex.NewClient(context.Background())
 	if err != nil {
-		log.Fatalf("Failed to create GCS client: %v", err)
+		logw.Fatalf(ctx, "Failed to create GCS client: %v", err)
 	}
 	scl, err := speech.NewClient(context.Background())
 	if err != nil {
-		log.Fatalf("Failed to create speech client: %v", err)
+		logw.Fatalf(ctx, "Failed to create speech client: %v", err)
 	}
 
 	// (3) Create tmp location, if needed.
@@ -97,14 +98,14 @@ func main() {
 		*bucket = fmt.Sprintf("transcribe-%v", time.Now().UnixNano())
 
 		if err := storagex.NewBucket(cl, *project, *bucket); err != nil {
-			log.Fatalf("Failed to create tmp bucket %v: %v", *bucket, err)
+			logw.Fatalf(ctx, "Failed to create tmp bucket %v: %v", *bucket, err)
 		}
-		defer storagex.TryDeleteBucket(cl, *bucket)
+		defer storagex.TryDeleteBucket(ctx, cl, *bucket)
 
-		log.Printf("Using temporary GCS bucket '%v'", *bucket)
+		logw.Infof(ctx, "Using temporary GCS bucket '%v'", *bucket)
 	}
 
-	log.Printf("Transcribing %v audio files in parallel", len(files))
+	logw.Infof(ctx, "Transcribing %v audio files in parallel", len(files))
 
 	// (4) Upload, transcribe and process the files in parallel
 
@@ -119,23 +120,23 @@ func main() {
 			name := filepath.Base(filename)
 			out := filepath.Join(*output, name+".txt")
 
-			log.Printf("Transcribing %v ...", name)
+			logw.Infof(ctx, "Transcribing %v ...", name)
 
 			if err := process(context.Background(), scl, cl, *bucket, filename, out, *mono); err != nil {
-				log.Printf("Failed to process %v: %v", name, err)
+				logw.Errorf(ctx, "Failed to process %v: %v", name, err)
 				atomic.AddInt32(&failures, 1)
 				return
 			}
 
-			log.Printf("Transcribed %v", name)
+			logw.Infof(ctx, "Transcribed %v", name)
 		}(name)
 	}
 	wg.Wait()
 
 	if failures > 0 {
-		log.Fatalf("Failed to transcribe %v audio files. Exiting.", failures)
+		logw.Fatalf(ctx, "Failed to transcribe %v audio files. Exiting.", failures)
 	}
-	log.Print("Done")
+	logw.Infof(ctx, "Done")
 }
 
 func process(ctx context.Context, scl *speech.Client, cl *storage.Service, bucket, filename, output string, mono bool) error {
@@ -161,7 +162,7 @@ func process(ctx context.Context, scl *speech.Client, cl *storage.Service, bucke
 	if err := storagex.UploadFile(cl, bucket, object, filename); err != nil {
 		return err
 	}
-	defer storagex.TryDeleteObject(cl, bucket, object)
+	defer storagex.TryDeleteObject(ctx, cl, bucket, object)
 
 	// (c) Transcribe
 
@@ -174,7 +175,7 @@ func process(ctx context.Context, scl *speech.Client, cl *storage.Service, bucke
 	data := transcribe.PostProcess(phrases)
 
 	duration := time.Duration((time.Now().Sub(before).Nanoseconds() / 1e9) * 1e9)
-	log.Printf("Audio file %v contained %v text segments (%v letters). Time spent: %v", name, len(phrases), len(data), duration)
+	logw.Infof(ctx, "Audio file %v contained %v text segments (%v letters). Time spent: %v", name, len(phrases), len(data), duration)
 
 	// (d) Write output
 

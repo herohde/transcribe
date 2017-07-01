@@ -2,12 +2,12 @@
 package transcribe
 
 import (
-	"cloud.google.com/go/speech/apiv1"
-	"fmt"
-
 	"context"
-	speechpb "google.golang.org/genproto/googleapis/cloud/speech/v1"
+	"fmt"
 	"strings"
+
+	"cloud.google.com/go/speech/apiv1"
+	speechpb "google.golang.org/genproto/googleapis/cloud/speech/v1"
 )
 
 // Submit transcribes an 44.1kHz wav file (uploaded to GCS) via the Google Speech

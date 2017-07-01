@@ -3,10 +3,11 @@ package storagex
 import (
 	"context"
 	"fmt"
+	"os"
+
+	"github.com/herohde/logw"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/storage/v1"
-	"log"
-	"os"
 )
 
 // NewClient returns a new GCS client using Application Default Credentials and
@@ -27,9 +28,9 @@ func NewBucket(cl *storage.Service, project, bucket string) error {
 
 // TryDeleteBucket tries to delete the given bucket and logs any errors.
 // Intended to deferred cleanup.
-func TryDeleteBucket(cl *storage.Service, bucket string) {
+func TryDeleteBucket(ctx context.Context, cl *storage.Service, bucket string) {
 	if err := cl.Buckets.Delete(bucket).Do(); err != nil {
-		log.Printf("Failed to delete bucket %v: %v", bucket, err)
+		logw.Errorf(ctx, "Failed to delete bucket %v: %v", bucket, err)
 	}
 }
 
@@ -49,8 +50,8 @@ func UploadFile(cl *storage.Service, bucket, object, filename string) error {
 
 // TryDeleteObject tries to delete the given object and logs any errors.
 // Intended to deferred cleanup.
-func TryDeleteObject(cl *storage.Service, bucket, object string) {
+func TryDeleteObject(ctx context.Context, cl *storage.Service, bucket, object string) {
 	if err := cl.Objects.Delete(bucket, object).Do(); err != nil {
-		log.Printf("Failed to delete object gs://%v/%v: %v", bucket, object, err)
+		logw.Errorf(ctx, "Failed to delete object gs://%v/%v: %v", bucket, object, err)
 	}
 }
