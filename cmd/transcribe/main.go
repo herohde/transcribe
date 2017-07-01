@@ -10,19 +10,19 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
+	"os/exec"
+	"path"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"cloud.google.com/go/speech/apiv1"
-	"google.golang.org/api/storage/v1"
-
+	"github.com/herohde/build"
 	"github.com/herohde/transcribe/pkg/transcribe"
 	"github.com/herohde/transcribe/pkg/util/storagex"
-	"os/exec"
-	"path"
-	"sync"
-	"sync/atomic"
+	"google.golang.org/api/storage/v1"
 )
 
 var (
@@ -30,6 +30,8 @@ var (
 	output  = flag.String("out", ".", "Directory to place output text files.")
 	bucket  = flag.String("bucket", "", "Temporary GCS bucket to hold the audio files. If not provided, a new transient bucket will be created.")
 	mono    = flag.Bool("mono", false, "Convert stereo audio file to mono (required if stereo).")
+
+	version = build.NewVersion(0, 9, 0)
 )
 
 func init() {
@@ -47,6 +49,7 @@ Options:
 
 func main() {
 	flag.Parse()
+	log.Printf("Transcribe, build %v", version)
 
 	// (1) Validate input
 	if len(flag.Args()) == 0 {
