@@ -55,18 +55,18 @@ func main() {
 	// (1) Validate input
 	if len(flag.Args()) == 0 {
 		flag.Usage()
-		logw.Fatalf(ctx, "No files provided.")
+		logw.Exitf(ctx, "No files provided.")
 	}
 	if *project == "" {
 		flag.Usage()
-		logw.Fatalf(ctx, "No project provided.")
+		logw.Exitf(ctx, "No project provided.")
 	}
 
 	var files []string
 	for _, file := range flag.Args() {
 		if !strings.HasSuffix(strings.ToLower(file), ".wav") {
 			flag.Usage()
-			logw.Fatalf(ctx, "File %v is not a supported (.wav) format", file)
+			logw.Exitf(ctx, "File %v is not a supported (.wav) format", file)
 		}
 
 		out := filepath.Join(*output, filepath.Base(file)+".txt")
