@@ -1,5 +1,7 @@
 # Transcribe
 
+[![Build Status](https://travis-ci.org/herohde/transcribe.svg?branch=master)](https://travis-ci.org/herohde/transcribe)
+
 Transcribe is a tool for transcribing audio files using Google Speech API. It
 is intended for bulk processing of large (> 1 min) audio files -- such as from
 dictation recorders -- and automates GCS upload (and removal). It supports
