@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/herohde/logw"
+	"github.com/seekerror/logw"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/storage/v1"
 )

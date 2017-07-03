@@ -18,10 +18,10 @@ import (
 	"time"
 
 	"cloud.google.com/go/speech/apiv1"
-	"github.com/herohde/build"
-	"github.com/herohde/logw"
 	"github.com/herohde/transcribe/pkg/transcribe"
 	"github.com/herohde/transcribe/pkg/util/storagex"
+	"github.com/seekerror/build"
+	"github.com/seekerror/logw"
 	"google.golang.org/api/storage/v1"
 )
 
